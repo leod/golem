@@ -114,6 +114,69 @@ impl Texture {
         }
     }
 
+    /// Set the image data associated with this texture
+    ///
+    /// `width` and `height` must be less than the maximum texture size of the
+    /// GPU, given by [`glow::MAX_TEXTURE_SIZE`]. If they are both powers of 2, mipmaps will be
+    /// generated. If they aren't, mipmaps will be unavailable.
+    ///
+    /// If 'data' is None, the image will be created with no data at the given dimensions.
+    /// If it is Some, it needs to be at least as long as `width * height *
+    /// [`color.bytes_per_pixel`])
+    ///
+    /// [`color.bytes_per_pixel`]: ColorFormat::bytes_per_pixel
+    pub fn set_image_f32(&mut self, data: Option<&[f32]>, width: u32, height: u32, color: ColorFormat) {
+        assert!(width > 0, "The texture width was 0",);
+        assert!(height > 0, "The texture width was 0",);
+        assert!(
+            width < glow::MAX_TEXTURE_SIZE,
+            "The texture width was bigger than the maximum size"
+        );
+        assert!(
+            height < glow::MAX_TEXTURE_SIZE,
+            "The texture height was bigger than the maximum size"
+        );
+        if let Some(data) = data {
+            assert!(
+                data.len() >= (width * height * color.bytes_per_pixel()) as usize,
+                "The texture data wasn't big enough for the width, height, and format supplied"
+            );
+        }
+        self.width = width;
+        self.height = height;
+
+        let format = match color {
+            ColorFormat::RGB => glow::RGB,
+            ColorFormat::RGBA => glow::RGBA,
+        };
+        let gl = &self.ctx.0.gl;
+        unsafe {
+            gl.bind_texture(glow::TEXTURE_2D, Some(self.id));
+            gl.tex_image_2d(
+                glow::TEXTURE_2D,
+                0,
+                format as i32,
+                width as i32,
+                height as i32,
+                0,
+                format,
+                glow::FLOAT,
+                data.map(bytemuck::cast_slice),
+            );
+            if width & (width - 1) == 0 && height & (height - 1) == 0 {
+                gl.generate_mipmap(glow::TEXTURE_2D);
+                self.mipmap = true;
+            } else {
+                self.mipmap = false;
+                self.set_wrap_h(TextureWrap::ClampToEdge)
+                    .expect("The texture wrap ClampToEdge is always valid");
+                self.set_wrap_v(TextureWrap::ClampToEdge)
+                    .expect("The texture wrap ClampToEdge is always valid");
+            }
+            gl.bind_texture(glow::TEXTURE_2D, None);
+        }
+    }
+
     /// Set a region of the texture data
     ///
     /// The data provided must be enough to cover `width * height * [`color.bytes_per_pixel()`]`.
